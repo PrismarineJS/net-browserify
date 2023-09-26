@@ -199,7 +199,7 @@ Socket.prototype.destroySoon = function() {
 
 Socket.prototype.destroy = function(exception) {
 	debug('destroy', exception);
-	
+
 	if (this.destroyed) {
 		return;
 	}
@@ -267,7 +267,7 @@ Socket.prototype.write = function(chunk, encoding, cb) {
 
 Socket.prototype.connect = function(options, cb) {
 	var self = this;
-	
+
 	if (!util.isObject(options)) {
 		// Old API:
 		// connect(port, [host], [cb])
@@ -311,8 +311,14 @@ Socket.prototype.connect = function(options, cb) {
 				};
 			}
 
-			if (data.error) {
-				self.emit('error', 'Cannot open TCP connection ['+res.statusCode+']: '+data.error);
+			if (data.error !== undefined) {
+				let errorMessage = 'Cannot open TCP connection ['+res.statusCode+']: '+data.error
+				if (res.statusCode === 0) {
+					errorMessage = 'Cannot reach the proxy server'
+				} else if (res.statusCode === 404) {
+					errorMessage = 'Cannot find the proxy server (404). Check proxy ip you entered.'
+				}
+				self.emit('error', errorMessage);
 				self.destroy();
 				return;
 			}
