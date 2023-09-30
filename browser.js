@@ -25,7 +25,7 @@ function getProxyHost() {
 }
 function getProxyOrigin() {
 	if (getProxy().requestProtocol) {
-		proxy.protocol = getProxy().requestProtocol === 'https' ? 'wss' : 'ws'
+		proxy.protocol = getProxy().requestProtocol === 'https:' ? 'wss' : 'ws'
 	}
 	return getProxy().protocol + '://' + getProxyHost();
 }
