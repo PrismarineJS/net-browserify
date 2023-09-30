@@ -5,12 +5,14 @@ var http = require('http');
 
 var debug = util.debuglog('net');
 
-var proxy = {
+var defaultProxy = {
 	protocol: (window.location.protocol == 'https:') ? 'wss' : 'ws',
+	requestProtocol: '',
 	hostname: window.location.hostname,
 	port: window.location.port,
 	path: '/api/vm/net'
 };
+var proxy = { ...defaultProxy }
 function getProxy() {
 	return proxy;
 }
@@ -22,16 +24,27 @@ function getProxyHost() {
 	return host;
 }
 function getProxyOrigin() {
+	if (getProxy().requestProtocol) {
+		proxy.protocol = getProxy().requestProtocol === 'https' ? 'wss' : 'ws'
+	}
 	return getProxy().protocol + '://' + getProxyHost();
 }
 exports.setProxy = function (options) {
+	proxy = { ...defaultProxy }
 	options = options || {};
 
-	if (options.protocol) {
-		proxy.protocol = options.protocol;
-	}
-	if (options.hostname) {
-		proxy.hostname = options.hostname;
+	let { hostname } = options
+	if (hostname) {
+		let requestProtocol
+		if (hostname.startsWith('http://')) {
+			requestProtocol = 'http:';
+			hostname = hostname.slice(7);
+		} else if (hostname.startsWith('https://')) {
+			requestProtocol = 'https:';
+			hostname = hostname.slice(8);
+		}
+		proxy.requestProtocol = requestProtocol;
+		proxy.hostname = hostname;
 	}
 	if (options.port) {
 		proxy.port = options.port;
@@ -293,6 +306,7 @@ Socket.prototype.connect = function(options, cb) {
 		hostname: getProxy().hostname,
 		port: getProxy().port,
 		path: getProxy().path + '/connect',
+		protocol: getProxy().requestProtocol,
 		method: 'POST',
 		withCredentials: false
 	}, function (res) {
