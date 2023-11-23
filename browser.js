@@ -326,11 +326,14 @@ Socket.prototype.connect = function(options, cb) {
 			}
 
 			if (data.error !== undefined) {
-				let errorMessage = 'Cannot open TCP connection ['+res.statusCode+']: '+data.error
+				let errorMessage = 'Cannot open TCP connection ['+res.statusCode+']: '+JSON.stringify(data.error)
 				if (res.statusCode === 0) {
 					errorMessage = 'Cannot reach the proxy server'
 				} else if (res.statusCode === 404) {
 					errorMessage = 'Cannot find the proxy server (404). Check proxy ip you entered.'
+				}
+				if (data.error.code === 'ENOTFOUND') {
+					errorMessage = 'Cannot find the server. Check server ip you entered.'
 				}
 				self.emit('error', errorMessage);
 				self.destroy();
