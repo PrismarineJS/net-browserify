@@ -398,6 +398,7 @@ Socket.prototype._handleWebsocket = function () {
 		console.warn('TCP error', e);
 		self.emit('error', 'An error occured with the WebSocket');
 	});
+	let reading = false
 	this._ws.addEventListener('message', function (e) {
 		var contents = e.data;
 
@@ -412,19 +413,32 @@ Socket.prototype._handleWebsocket = function () {
 			gotBuffer(buffer);
 		} else if (window.Blob && contents instanceof Blob) {
 			var fileReader = new FileReader();
+			let resolveReading
+			reading = new Promise((resolve) => {
+				resolveReading = resolve
+			})
+
 			fileReader.addEventListener('load', function (e) {
 				var buf = fileReader.result;
 				var arr = new Uint8Array(buf);
 				gotBuffer(new Buffer(arr));
+				resolveReading()
+				reading = false
+			});
+			fileReader.addEventListener('error', function (e) {
+				console.warn('Cannot read TCP stream: file reader error', e);
+				resolveReading()
+				reading = false
 			});
 			fileReader.readAsArrayBuffer(contents);
 		} else {
 			console.warn('Cannot read TCP stream: unsupported message type', contents);
 		}
 	});
-	this._ws.addEventListener('close', function () {
+	this._ws.addEventListener('close', async function () {
 		if (self.readyState == 'open') {
 			//console.log('TCP closed');
+			await reading
 			self.destroy();
 		}
 	});
