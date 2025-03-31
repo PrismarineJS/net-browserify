@@ -50,6 +50,24 @@ module.exports = function (options, connectionListener) {
 	}
 
 	var sockets = {};
+	var wsConnections = {};
+
+	function handleTermination() {
+		console.debug('Cleaning up...');
+		// Send termination message to all active WebSocket connections
+		Object.values(wsConnections).forEach(ws => {
+			try {
+				ws.send('proxy-shutdown:Proxy server is shutting down. Most probably it is being restarted so try to reconnect.', () => {});
+				ws.close();
+			} catch (err) {
+				console.error('Error sending termination message:', err);
+			}
+		});
+		process.exit(0);
+	}
+
+	process.on('SIGINT', handleTermination);
+	process.on('SIGTERM', handleTermination);
 
 	if (options.allowOrigin) {
 		var allowOrigin = options.allowOrigin;
@@ -78,6 +96,7 @@ module.exports = function (options, connectionListener) {
 		}
 	}
 
+	const timeout = options.timeout ?? 5000
 	app.post(urlRoot + '/connect', jsonParser, function (req, res) {
 		var host = req.body.host,
 			port = req.body.port;
@@ -134,7 +153,7 @@ module.exports = function (options, connectionListener) {
 				remote: remote
 			});
 		});
-		socket.setTimeout(options.timeout ?? 5000); // 5000 milliseconds = 5 seconds
+		socket.setTimeout(timeout); // 5000 milliseconds = 5 seconds
 
 		// Handle the 'timeout' event
 		socket.on('timeout', function () {
@@ -165,7 +184,7 @@ module.exports = function (options, connectionListener) {
 
 	var wss = expressWs(app, server);
 
-	app.ws(urlRoot + '/socket', function (ws, req) {
+	app.ws(urlRoot + '/socket', function (/** @type {import('ws').WebSocket} */ws, req) {
 		var token = req.query.token;
 
 		if (!sockets[token]) {
@@ -175,13 +194,13 @@ module.exports = function (options, connectionListener) {
 		}
 
 		var socket = sockets[token];
-		//delete sockets[token];
+		wsConnections[token] = ws; // Track WebSocket connection
 
 		myLog('Forwarding socket with token '+token);
 
 		ws.on('message', function (data) {
 			if (typeof data === 'string' && data.startsWith('ping:')) {
-				ws.send('pong:' + data.slice('ping:'.length));
+				ws.send('pong:' + data.slice('ping:'.length), () => {});
 				return
 			}
 			socket.write(data, 'binary', function () {
@@ -193,14 +212,36 @@ module.exports = function (options, connectionListener) {
 			// Providing a callback is important, otherwise errors can be thrown
 			ws.send(chunk, { binary: true }, function (err) {});
 		});
+
+		let reasonSent = false;
+		socket.on('timeout', function () {
+			if (!reasonSent) {
+				ws.send('proxy-shutdown:Connection timed out. No packets were sent or received from either side in '+timeout+'ms.', () => {});
+				reasonSent = true;
+			}
+		});
+
+		socket.on('error', function (err) {
+			if (!reasonSent) {
+				const message = err.code === 'EADDRNOTAVAIL' ? 'Minecraft server is not reachable anymore.' : 'Issue with the connection to the Minecraft server: '+err.message;
+				ws.send('proxy-shutdown:'+message, () => {});
+				reasonSent = true;
+			}
+		});
+
 		socket.on('close', function () {
 			// todo let client know of errors somehow
 			myLog('TCP connection closed by remote ('+token+')');
+			if (!reasonSent) {
+				ws.send('proxy-shutdown:Minecraft server closed the connection.', () => {});
+			}
 			ws.close();
+			delete wsConnections[token]; // Clean up WebSocket connection
 		});
 		ws.on('close', function () {
 			socket.end();
 			myLog('Websocket connection closed ('+token+')');
+			delete wsConnections[token]; // Clean up WebSocket connection
 		});
 	});
 
